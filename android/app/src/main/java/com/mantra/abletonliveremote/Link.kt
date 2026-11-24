@@ -221,7 +221,7 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         LiveState(j.optLong("v"), j.optBoolean("live"), j.optBoolean("playing"), j.optDouble("time", 0.0),
             j.optDouble("tempo", 120.0), j.optBoolean("metro"), j.optBoolean("loop"), j.optDouble("loopStart", 0.0),
             j.optDouble("loopLen", 0.0), j.optBoolean("rec"), j.optInt("sigN", 4), j.optInt("sigD", 4),
-            j.optDouble("end", 0.0), tracks, SystemClock.elapsedRealtime())
+            j.optDouble("end", 0.0), tracks, SystemClock.elapsedRealtime(), j.optBoolean("noInput"))
     } catch (e: Exception) { null }
 
     private fun get(url: String, timeout: Int): ByteArray? = try {

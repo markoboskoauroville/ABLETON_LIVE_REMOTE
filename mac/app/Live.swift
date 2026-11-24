@@ -235,11 +235,37 @@ final class Live {
         orders.async { LiveTurn.tell(a, args) }
     }
 
+    /// Live's own log says which audio input device it uses; with "No Device" Live does not arm audio tracks (found
+    /// 24.11.2026: every ARM was refused in silence). Read at most every 10 s, the end of the log only.
+    private var inputChecked = Date.distantPast
+    private var _noInput = false
+    var noInput: Bool {
+        if Date().timeIntervalSince(inputChecked) > 10 {
+            inputChecked = Date()
+            _noInput = Live.liveInputIsNone()
+        }
+        return _noInput
+    }
+
+    static func liveInputIsNone() -> Bool {
+        let base = NSHomeDirectory() + "/Library/Preferences/Ableton"
+        guard let dirs = try? FileManager.default.contentsOfDirectory(atPath: base) else { return false }
+        let live = dirs.filter { $0.hasPrefix("Live ") }.sorted { a, b in a.compare(b, options: .numeric) == .orderedAscending }
+        guard let newest = live.last, let h = FileHandle(forReadingAtPath: base + "/" + newest + "/Log.txt") else { return false }
+        defer { try? h.close() }
+        let size = (try? h.seekToEnd()) ?? 0
+        try? h.seek(toOffset: size > 400_000 ? size - 400_000 : 0)
+        let text = String(decoding: h.readDataToEndOfFile(), as: UTF8.self)
+        guard let r = text.range(of: "Input Device: ", options: .backwards) else { return false }
+        let line = text[r.upperBound...].prefix { $0 != "\n" && $0 != "\r" }
+        return line.trimmingCharacters(in: .whitespaces) == "No Device"
+    }
+
     var json: [String: Any] {
         let s = snap
         func f(_ x: Double) -> Double { x.isFinite ? x : 0 }
         return ["v": rev, "live": answering, "playing": s.playing, "time": f(s.time), "tempo": f(s.tempo), "metro": s.metro,
                 "loop": s.loop, "loopStart": f(s.loopStart), "loopLen": f(s.loopLen), "rec": s.rec, "sigN": s.sigN,
-                "sigD": s.sigD, "end": f(s.end), "tracks": s.tracks.map { $0.json }]
+                "sigD": s.sigD, "end": f(s.end), "noInput": noInput, "tracks": s.tracks.map { $0.json }]
     }
 }

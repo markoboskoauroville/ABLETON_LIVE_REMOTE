@@ -27,7 +27,7 @@ data class Track(
 data class LiveState(
     val v: Long, val live: Boolean, val playing: Boolean, val time: Double, val tempo: Double, val metro: Boolean,
     val loop: Boolean, val loopStart: Double, val loopLen: Double, val rec: Boolean, val sigN: Int, val sigD: Int,
-    val end: Double, val tracks: List<Track>, val at: Long
+    val end: Double, val tracks: List<Track>, val at: Long, val noInput: Boolean = false
 ) {
     val beatLen get() = 4.0 / max(1, sigD)
     val barLen get() = beatLen * max(1, sigN)

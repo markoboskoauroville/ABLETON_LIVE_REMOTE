@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -197,6 +198,11 @@ private fun RecTab(link: Link) {
                 letterSpacing = 1.sp, modifier = Modifier.weight(1f))
             SmallKey("+ NEW TRACK", false, Green, "new track") { newTrack = true }
         }
+        if (s.noInput) {
+            Text("Live has no audio input device (Settings → Audio → Audio Input Device), so it does not arm audio tracks.",
+                color = Amber, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics { contentDescription = "no input device" })
+        }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(s.tracks, key = { it.i }) { t -> TrackRow(link, t) }
         }
@@ -313,7 +319,7 @@ private fun WaveSection(link: Link, s: LiveState, clock: State<Long>) {
                     overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 Text("▾", color = Grey, fontSize = 14.sp)
             }
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.heightIn(max = 420.dp)) {
                 for (t in audio) {
                     DropdownMenuItem(
                         text = {
@@ -355,12 +361,18 @@ private fun WaveStrip(link: Link, s: LiveState, w: Wave?, track: Track?, view: S
                 detectTapGestures(onTap = { o -> link.jump(beatAt(o.x, size.width)) })
             }
             .pointerInput(Unit) {
+                var lastX = 0f
                 detectHorizontalDragGestures(
-                    onDragStart = { o -> lastSent = SystemClock.elapsedRealtime(); link.jump(beatAt(o.x, size.width), false) },
-                    onDragEnd = { },
+                    onDragStart = { o ->
+                        lastX = o.x; lastSent = SystemClock.elapsedRealtime(); link.jump(beatAt(o.x, size.width), false)
+                    },
+                    // v2: the finger's last place is always sent (v1 lost it when the last move fell inside the 70 ms)
+                    onDragEnd = { link.jump(beatAt(lastX, size.width)) },
+                    onDragCancel = { link.jump(beatAt(lastX, size.width)) },
                     onHorizontalDrag = { change, _ ->
+                        lastX = change.position.x
                         val now = SystemClock.elapsedRealtime()
-                        if (now - lastSent > 70) { lastSent = now; link.jump(beatAt(change.position.x, size.width), false) }
+                        if (now - lastSent > 70) { lastSent = now; link.jump(beatAt(lastX, size.width), false) }
                     }
                 )
             }
