@@ -43,3 +43,11 @@ See the dated lines at the end (newest last).
 
 - v2: SESSION tab: the Ableton window over VNC (RFB client from MANTRA_REMOTE_VIEWING), cropped to `/window`.
 - MIX tab: solo and mute for every track (the state already carries them; the orders exist).
+
+- **24.11.2026:** Android v2 (Latest) and Mac helper v3, all runs green. Verified on the Pixel 7 emulator over the cable
+  route (adb reverse) against Live 12.4.6: metronome, PLAY, STOP, RECORD (record_mode on + playing, STOP ends both),
+  ARM on a MIDI track, NEW TRACK audio and MIDI (both appeared, both deleted again), tap-to-jump exact to 0.01 beat in
+  WHOLE and LOOP, LOOP view follows the brace moved in Live, beat light red on the downbeat and green on the others,
+  changes made in Live (metronome, loop) shown on the phone. Audio tracks do not arm: Live 12.4.6's log says its audio
+  input device is "No Device" (the RØDE NT1 used under 12.4.16 is not connected); the phone says so (v2 / Mac v3).
+  NOT yet on the real Pixel 7: it was rebooted and not unlocked since, so no app can start there (needs Marko's PIN once).
