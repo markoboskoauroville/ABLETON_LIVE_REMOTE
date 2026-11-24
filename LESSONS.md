@@ -10,3 +10,5 @@
 - **Clip markers are seconds when a clip is not warped, beats when it is** (Live 12.4.6, checked on the test set: the
   Vasyl stems unwarped end_marker 344.52 s; the Suno imports warped end_marker 721.04 beats). 24.11.2026.
 - **AbletonOSC works once per tick (100 ms)**: one question costs 50–100 ms of the shared turn. 24.11.2026.
+- **A Kotlin `var full` in an Activity has a JVM setter `setFull(Boolean)`**: a `fun setFull(on: Boolean)` beside it is a
+  "Platform declaration clash" (Android v3 failed on it; the fix went out as v4, the number is never reused). 24.11.2026.

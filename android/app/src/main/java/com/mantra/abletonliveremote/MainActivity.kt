@@ -126,7 +126,7 @@ class MainActivity : ComponentActivity() {
         viewer.start()
         onTab(link.tab)
         setContent {
-            RemoteScreen(link, viewer, full, { setFull(it) }, { onTab(it) }) { openReleases() }
+            RemoteScreen(link, viewer, full, { fullScreen(it) }, { onTab(it) }) { openReleases() }
         }
         AppUpdater.checkAtStart(this)
     }
@@ -136,11 +136,11 @@ class MainActivity : ComponentActivity() {
         viewer.active.value = tab == "session"
         requestedOrientation = if (tab == "session") ActivityInfo.SCREEN_ORIENTATION_FULL_USER
                                else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        if (tab != "session") setFull(false)
+        if (tab != "session") fullScreen(false)
     }
 
     /** FULL SCREEN: the bars hidden (a swipe from the edge shows them for a moment), the app's own ✕ brings them back. */
-    private fun setFull(on: Boolean) {
+    private fun fullScreen(on: Boolean) {
         full = on
         val c = WindowCompat.getInsetsController(window, window.decorView)
         if (on) {
@@ -157,7 +157,7 @@ class MainActivity : ComponentActivity() {
 
     @Deprecated("Back leaves full screen first")
     override fun onBackPressed() {
-        if (full) setFull(false) else @Suppress("DEPRECATION") super.onBackPressed()
+        if (full) fullScreen(false) else @Suppress("DEPRECATION") super.onBackPressed()
     }
 
     override fun onResume() { super.onResume(); AppUpdater.resume(this) }
