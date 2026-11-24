@@ -100,3 +100,12 @@ class Wave(
         return m / 255f
     }
 }
+
+/**
+ * Where the Live window is, as the helper sees it: found at all, on the screen now (not another Space, not minimised),
+ * its place in the VNC picture's pixels (fx, fy, fw, fh), how much of it other apps' windows cover and which.
+ */
+data class WinInfo(
+    val found: Boolean, val onScreen: Boolean, val front: Boolean, val covered: Double, val by: List<String>,
+    val fx: Int, val fy: Int, val fw: Int, val fh: Int
+)

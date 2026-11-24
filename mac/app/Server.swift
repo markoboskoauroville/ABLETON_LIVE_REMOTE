@@ -255,32 +255,71 @@ final class Server {
     }
 }
 
-/// The Ableton Live window on the screen (CGWindowList: the bounds need no permission), for the SESSION tab's crop.
+/// The Ableton Live window on the screen, for the SESSION tab's crop (CGWindowList: owners and bounds need no permission).
+///   found     a Live window exists at all;  onScreen  it is on the current Space and not minimized
+///   x y w h   its place in points (top left of the main screen);  fx fy fw fh  the same in the VNC picture's pixels:
+///             Apple's server puts each screen at its top-left in points and draws it at its pixel size
+///             (MANTRA_REMOTE_VIEWING LESSONS, 8.11.2026)
+///   covered   the part of it (0…1) under other apps' windows;  by  those apps;  front  Live is the app in front
 enum LiveWindow {
     static func find() -> [String: Any] {
-        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-                as? [[String: Any]] else { return ["found": false] }
-        var best: CGRect = .zero
-        for w in list {
-            guard (w[kCGWindowOwnerName as String] as? String) == "Live",
-                  (w[kCGWindowLayer as String] as? Int) == 0,
-                  let bd = w[kCGWindowBounds as String] as? [String: Any],
-                  let r = CGRect(dictionaryRepresentation: bd as CFDictionary) else { continue }
-            if r.width * r.height > best.width * best.height { best = r }
+        let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? ""
+        guard let all = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]],
+              let on = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        else { return ["found": false] }
+        func owner(_ w: [String: Any]) -> String { (w[kCGWindowOwnerName as String] as? String) ?? "" }
+        func layer(_ w: [String: Any]) -> Int { (w[kCGWindowLayer as String] as? Int) ?? 0 }
+        func bounds(_ w: [String: Any]) -> CGRect {
+            guard let bd = w[kCGWindowBounds as String] as? [String: Any],
+                  let r = CGRect(dictionaryRepresentation: bd as CFDictionary) else { return .zero }
+            return r
         }
-        guard best.width > 0 else { return ["found": false] }
-        // CGWindow bounds are in points from the top left of the main screen; the VNC picture is in pixels
-        let main = NSScreen.screens.first
-        let scale = main?.backingScaleFactor ?? 1
-        let total = NSScreen.screens.reduce(CGRect.zero) { $0.union($1.frame) }
-        return ["found": true, "x": best.minX, "y": best.minY, "w": best.width, "h": best.height, "scale": scale,
-                "screenW": main?.frame.width ?? 0, "screenH": main?.frame.height ?? 0,
-                "desktopW": total.width, "desktopH": total.height]
+        func id(_ w: [String: Any]) -> Int { (w[kCGWindowNumber as String] as? Int) ?? -1 }
+        func biggestLive(_ list: [[String: Any]]) -> [String: Any]? {
+            list.filter { owner($0) == "Live" && layer($0) == 0 && bounds($0).width > 200 && bounds($0).height > 150 }
+                .max { bounds($0).width * bounds($0).height < bounds($1).width * bounds($1).height }
+        }
+        guard biggestLive(all) != nil else { return ["found": false, "onScreen": false, "front": front == "Live"] }
+        guard let main = biggestLive(on), let idx = on.firstIndex(where: { id($0) == id(main) }) else {
+            return ["found": true, "onScreen": false, "front": front == "Live"]
+        }
+        let r = bounds(main)
+        // what lies over it: every window in front of it (the list runs front to back) that is not Live's own
+        var coveredArea: CGFloat = 0
+        var by: [String] = []
+        for w in on[..<idx] {
+            let o = owner(w)
+            guard o != "Live", o != "Window Server", layer(w) < 1000 else { continue }
+            if let a = w[kCGWindowAlpha as String] as? Double, a < 0.05 { continue }
+            let i = bounds(w).intersection(r)
+            guard !i.isNull, i.width * i.height > 400 else { continue }
+            coveredArea += i.width * i.height
+            if !by.contains(o) { by.append(o) }
+        }
+        // the screens in top-left points, and where the window falls in the VNC picture
+        let screens = NSScreen.screens
+        let mainH = screens.first?.frame.height ?? 0
+        let tl = screens.map { (x: $0.frame.minX, y: mainH - $0.frame.maxY, w: $0.frame.width, h: $0.frame.height,
+                                s: $0.backingScaleFactor) }
+        let minX = tl.map { $0.x }.min() ?? 0, minY = tl.map { $0.y }.min() ?? 0
+        let c = CGPoint(x: r.midX, y: r.midY)
+        let sc = tl.first { c.x >= $0.x && c.x < $0.x + $0.w && c.y >= $0.y && c.y < $0.y + $0.h } ?? tl.first
+        var out: [String: Any] = ["found": true, "onScreen": true, "front": front == "Live", "frontApp": front,
+                                  "x": r.minX, "y": r.minY, "w": r.width, "h": r.height,
+                                  "covered": min(1, Double(coveredArea / max(1, r.width * r.height))), "by": by]
+        if let s = sc {
+            out["fx"] = Int(((s.x - minX) + (r.minX - s.x) * s.s).rounded())
+            out["fy"] = Int(((s.y - minY) + (r.minY - s.y) * s.s).rounded())
+            out["fw"] = Int((r.width * s.s).rounded())
+            out["fh"] = Int((r.height * s.s).rounded())
+            out["scale"] = s.s
+        }
+        return out
     }
 }
 
 /// The cable, or wireless ADB, when the Wi-Fi is not shared: every 5 s each phone adb sees gets
-/// `adb reverse tcp:8966 tcp:8966`, so on the phone the Mac is at 127.0.0.1:8966 (as Stream Deck Remote).
+/// `adb reverse tcp:8966 tcp:8966` (and 15900 → the Mac's VNC 5900), so on the phone the Mac is at 127.0.0.1.
 final class Cable {
     private let adb = NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb"
     private(set) var phones: [String] = []
@@ -308,8 +347,13 @@ final class Cable {
             }
             var names: [String] = []
             for s in serials {
-                if !self.run(["-s", s, "reverse", "--list"]).contains("tcp:\(PORT)") {
+                let list = self.run(["-s", s, "reverse", "--list"])
+                if !list.contains("tcp:\(PORT)") {
                     _ = self.run(["-s", s, "reverse", "tcp:\(PORT)", "tcp:\(PORT)"])
+                }
+                // the Mac's Screen Sharing (VNC 5900) for the SESSION tab, at 127.0.0.1:15900 on the phone
+                if !list.contains("tcp:15900") {
+                    _ = self.run(["-s", s, "reverse", "tcp:15900", "tcp:5900"])
                 }
                 let model = self.run(["-s", s, "shell", "getprop", "ro.product.model"]).trimmingCharacters(in: .whitespacesAndNewlines)
                 names.append(model.isEmpty ? s : model)

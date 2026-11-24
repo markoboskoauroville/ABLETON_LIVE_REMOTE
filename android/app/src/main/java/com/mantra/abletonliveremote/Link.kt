@@ -154,18 +154,39 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         get() = prefs.getString("view", "whole") ?: "whole"
         set(v) { prefs.edit().putString("view", v).apply() }
 
+    /** The Mac's Screen Sharing on the same route as the helper: over the cable 127.0.0.1:15900 (adb reverse to 5900). */
+    fun vncTarget(): Pair<String, Int>? {
+        val b = base ?: return null
+        val host = try { java.net.URI(b).host } catch (e: Exception) { null } ?: return null
+        return if (host == "127.0.0.1") host to 15900 else host to 5900
+    }
+
+    /** The Live window's place and state, from the helper (null when the Mac does not answer). */
+    fun fetchWindow(): WinInfo? {
+        val b = base ?: return null
+        val d = get("$b/window", 2500) ?: return null
+        return try {
+            val j = JSONObject(String(d))
+            val by = j.optJSONArray("by")
+            WinInfo(j.optBoolean("found"), j.optBoolean("onScreen"), j.optBoolean("front"), j.optDouble("covered", 0.0),
+                (0 until (by?.length() ?: 0)).map { by!!.getString(it) },
+                j.optInt("fx"), j.optInt("fy"), j.optInt("fw"), j.optInt("fh"))
+        } catch (e: Exception) { null }
+    }
+
     // MARK: finding the Mac
 
     private fun find(): String? {
         val tries = mutableListOf<Pair<String, String>>()
+        // an address typed by hand is tried first: the person chose it (v3)
+        manual.value.takeIf { it.isNotEmpty() }?.let { m ->
+            tries += (if (m.startsWith("http")) m else if (m.contains(":")) "http://$m" else "http://$m:$PORT") to "typed address"
+        }
         tries += "http://127.0.0.1:$PORT" to "the cable"
         prefs.getString("last", null)?.let { tries += it to "Wi-Fi" }
         var waited = 0
         while (bonjour == null && prefs.getString("last", null) == null && waited < 2500) { Thread.sleep(250); waited += 250 }
         bonjour?.let { tries += it to "Wi-Fi" }
-        manual.value.takeIf { it.isNotEmpty() }?.let { m ->
-            tries += (if (m.startsWith("http")) m else if (m.contains(":")) "http://$m" else "http://$m:$PORT") to "typed address"
-        }
         tries += "http://$TAILSCALE_MAC:$PORT" to "Tailscale"
         for ((url, how) in tries.distinctBy { it.first }) {
             val d = get("$url/hello", 900) ?: continue

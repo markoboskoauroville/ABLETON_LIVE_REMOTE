@@ -1,6 +1,22 @@
 package com.mantra.abletonliveremote
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
@@ -84,15 +100,21 @@ private val Red = Color(0xFFFF453A)
 private val Grey = Color(0xFF8E8E93)
 private val White = Color(0xFFF2F2F7)
 
-/** The scenario tabs (Marko, 24.11.2026: "for each scenario ... separate tabs"). MIX (solo, mute) comes next. */
+/**
+ * The scenario tabs (Marko, 24.11.2026: "for each scenario ... separate tabs"). A new scenario is one more pair here and
+ * one more branch in RemoteScreen: MIX (solo and mute for every track; the state already carries both) comes next.
+ */
 private val TABS = listOf("rec" to "REC", "session" to "SESSION")
 
 /**
  * Ableton Live Remote (Mantra). Portrait, Stream Deck style keys. REC: the transport, the metronome with its beat
  * light, one track's waveform on the timeline (tap to move the playhead), and every track with its ARM key.
+ * SESSION: the Live window from the Mac's screen, view only; this tab may turn sideways and go full screen.
  */
 class MainActivity : ComponentActivity() {
     private lateinit var link: Link
+    private lateinit var viewer: Viewer
+    private var full by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -100,14 +122,42 @@ class MainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)   // a remote on the desk never goes dark
         link = Link(applicationContext, lifecycleScope)
         link.start()
-        setContent { RemoteScreen(link) { openReleases() } }
+        viewer = Viewer(applicationContext, link, lifecycleScope)
+        viewer.start()
+        onTab(link.tab)
+        setContent {
+            RemoteScreen(link, viewer, full, { setFull(it) }, { onTab(it) }) { openReleases() }
+        }
         AppUpdater.checkAtStart(this)
+    }
+
+    /** REC is portrait only; SESSION may turn with the phone (the picture is wide). */
+    private fun onTab(tab: String) {
+        viewer.active.value = tab == "session"
+        requestedOrientation = if (tab == "session") ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+                               else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        if (tab != "session") setFull(false)
+    }
+
+    /** FULL SCREEN: the bars hidden (a swipe from the edge shows them for a moment), the app's own ✕ brings them back. */
+    private fun setFull(on: Boolean) {
+        full = on
+        val c = WindowCompat.getInsetsController(window, window.decorView)
+        if (on) {
+            c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            c.hide(WindowInsetsCompat.Type.systemBars())
+        } else c.show(WindowInsetsCompat.Type.systemBars())
     }
 
     private fun openReleases() {
         try {
             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/markoboskoauroville/ABLETON_LIVE_REMOTE/releases/latest")))
         } catch (e: Exception) { }
+    }
+
+    @Deprecated("Back leaves full screen first")
+    override fun onBackPressed() {
+        if (full) setFull(false) else @Suppress("DEPRECATION") super.onBackPressed()
     }
 
     override fun onResume() { super.onResume(); AppUpdater.resume(this) }
@@ -127,11 +177,27 @@ private fun frameClock(playing: Boolean): State<Long> {
 }
 
 @Composable
-private fun RemoteScreen(link: Link, openReleases: () -> Unit) {
+private fun RemoteScreen(
+    link: Link, viewer: Viewer, full: Boolean, setFull: (Boolean) -> Unit, onTab: (String) -> Unit, openReleases: () -> Unit
+) {
     val status by link.status.collectAsState()
     val connected by link.connected.collectAsState()
     var tab by remember { mutableStateOf(link.tab) }
     var ask by remember { mutableStateOf(false) }
+
+    if (full && tab == "session") {
+        // FULL SCREEN: only the picture; the camera hole is still kept clear, and the app's own way out top right
+        Box(Modifier.fillMaxSize().background(Color.Black).windowInsetsPadding(WindowInsets.displayCutout)) {
+            Picture(viewer, Modifier.fillMaxSize())
+            Box(
+                Modifier.align(Alignment.TopEnd).padding(16.dp).size(48.dp).clip(CircleShape)
+                    .background(Color(0x99000000)).border(1.dp, Rim, CircleShape).clickable { setFull(false) }
+                    .semantics { contentDescription = "exit full screen" },
+                contentAlignment = Alignment.Center
+            ) { Text("✕", color = White, fontSize = 20.sp) }
+        }
+        return
+    }
 
     Box(Modifier.fillMaxSize().background(Bg).windowInsetsPadding(WindowInsets.safeDrawing).padding(16.dp)) {
         Column(Modifier.fillMaxSize()) {
@@ -154,23 +220,121 @@ private fun RemoteScreen(link: Link, openReleases: () -> Unit) {
             Spacer(Modifier.height(6.dp))
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (tab) {
-                    "session" -> SessionSoon()
+                    "session" -> SessionTab(viewer) { setFull(true) }
                     else -> RecTab(link)
                 }
             }
-            Tabs(tab) { tab = it; link.tab = it }
+            Tabs(tab) { tab = it; link.tab = it; onTab(it) }
         }
     }
     if (ask) AddressDialog(link.manual.value, { link.setManual(it); ask = false }) { ask = false }
 }
 
+// MARK: SESSION
+
 @Composable
-private fun SessionSoon() {
+private fun SessionTab(viewer: Viewer, goFull: () -> Unit) {
+    val needPw by viewer.needPassword.collectAsState()
+    val refused by viewer.refused.collectAsState()
+    val on by viewer.connected.collectAsState()
+    val status by viewer.status.collectAsState()
+    val w by viewer.win.collectAsState()
+    val fps by viewer.fps.collectAsState()
+    val ms by viewer.askMs.collectAsState()
+    var anyway by remember { mutableStateOf(false) }
+
+    if (needPw) { PasswordCard(refused) { viewer.savePassword(it) }; return }
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (on) "LIVE WINDOW · " + String.format(java.util.Locale.US, "%.0f fps · %d ms", fps, ms) else status,
+                color = Grey, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
+                    .semantics { contentDescription = "session status" }
+            )
+            SmallKey("FULL SCREEN", false, Green, "full screen") { goFull() }
+        }
+        val note = when {
+            w == null -> "Asking the Mac where the Live window is…"
+            !w!!.found -> "Ableton Live is not open on the Mac."
+            !w!!.onScreen -> "The Live window is not on the Mac's screen now (another Space, minimised or hidden). " +
+                "Nothing is moved from here: bring it up on the Mac."
+            w!!.covered > 0.02 && !anyway -> "Other windows lie over Live (" + w!!.by.joinToString(", ") + ", " +
+                String.format(java.util.Locale.US, "%.0f %%", w!!.covered * 100) + " of it). The picture would show them, " +
+                "not Live. Nothing is moved from here."
+            !on -> status.ifEmpty { "Connecting to the Mac's screen…" }
+            else -> null
+        }
+        Box(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color.Black)) {
+            if (note == null) Picture(viewer, Modifier.fillMaxSize())
+            else Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(note, color = if ((w?.covered ?: 0.0) > 0.02 || w?.onScreen == false) Amber else Grey, fontSize = 15.sp,
+                    modifier = Modifier.semantics { contentDescription = "session note" })
+                if (w != null && w!!.onScreen && w!!.covered > 0.02 && !anyway) {
+                    Spacer(Modifier.height(14.dp))
+                    SmallKey("SHOW ANYWAY", false, Amber, "show anyway") { anyway = true }
+                }
+            }
+        }
+        Text("View only: nothing on the phone reaches the Mac's mouse or keyboard. Pinch to zoom, drag to move, two taps to fit.",
+            color = Grey, fontSize = 11.sp, maxLines = 2)
+    }
+}
+
+/** The Live window's picture: fitted, then the fingers' zoom (pinch) and pan (drag); two taps fit it again. */
+@Composable
+private fun Picture(viewer: Viewer, modifier: Modifier) {
+    val tick by viewer.tick.collectAsState()
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+    var box by remember { mutableStateOf(IntSize.Zero) }
+    fun limit(p: Offset, z: Float): Offset {
+        val b = viewer.rfb?.crop ?: return Offset.Zero
+        if (box.width == 0 || b.width == 0) return Offset.Zero
+        val fit = minOf(box.width.toFloat() / b.width, box.height.toFloat() / b.height)
+        val mx = maxOf(0f, (b.width * fit * z - box.width) / 2); val my = maxOf(0f, (b.height * fit * z - box.height) / 2)
+        return Offset(p.x.coerceIn(-mx, mx), p.y.coerceIn(-my, my))
+    }
+    Canvas(
+        modifier.clipToBounds().onSizeChanged { box = it }
+            .pointerInput(Unit) {
+                detectTransformGestures { _, p, z, _ -> zoom = (zoom * z).coerceIn(1f, 8f); pan = limit(pan + p, zoom) }
+            }
+            .pointerInput(Unit) { detectTapGestures(onDoubleTap = { zoom = 1f; pan = Offset.Zero }) }
+            .semantics { contentDescription = "live window picture" }
+    ) {
+        if (tick < 0) return@Canvas                      // read: every new frame draws again
+        val b = viewer.rfb?.crop ?: return@Canvas
+        val fit = minOf(size.width / b.width, size.height / b.height)
+        val s = fit * zoom
+        val dw = b.width * s; val dh = b.height * s
+        val p = limit(pan, zoom)
+        drawImage(
+            b.asImageBitmap(), dstOffset = IntOffset(((size.width - dw) / 2 + p.x).toInt(), ((size.height - dh) / 2 + p.y).toInt()),
+            dstSize = IntSize(dw.toInt(), dh.toInt()), filterQuality = FilterQuality.Medium
+        )
+    }
+}
+
+@Composable
+private fun PasswordCard(refused: Boolean, save: (String) -> Unit) {
+    var text by remember { mutableStateOf("") }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Text("SESSION", color = White, fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
         Spacer(Modifier.height(10.dp))
-        Text("The Ableton Live window, live on the phone.", color = Grey, fontSize = 14.sp)
-        Text("Coming in v2.", color = Grey, fontSize = 14.sp)
+        Text(
+            (if (refused) "The Mac refused that password. " else "") +
+                "The Live window comes from the Mac's Screen Sharing. Its password (System Settings → Sharing → Screen " +
+                "Sharing → \"VNC viewers may control screen with password\") is asked once and kept on this phone only, encrypted.",
+            color = if (refused) Amber else Grey, fontSize = 14.sp, modifier = Modifier.semantics { contentDescription = "password note" }
+        )
+        Spacer(Modifier.height(14.dp))
+        OutlinedTextField(text, { text = it }, singleLine = true, label = { Text("Screen Sharing password") },
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "vnc password" })
+        Spacer(Modifier.height(12.dp))
+        SmallKey("SAVE", false, Green, "save password") { if (text.isNotEmpty()) save(text) }
     }
 }
 
