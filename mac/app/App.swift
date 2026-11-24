@@ -5,7 +5,7 @@
 import AppKit
 import SwiftUI
 
-let VERSION = 2
+let VERSION = 3
 let APP_NAME = "Ableton Live Remote (Mantra)"
 
 final class Model: ObservableObject {

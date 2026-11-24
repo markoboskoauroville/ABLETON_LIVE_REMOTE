@@ -250,8 +250,13 @@ final class Live {
     static func liveInputIsNone() -> Bool {
         let base = NSHomeDirectory() + "/Library/Preferences/Ableton"
         guard let dirs = try? FileManager.default.contentsOfDirectory(atPath: base) else { return false }
-        let live = dirs.filter { $0.hasPrefix("Live ") }.sorted { a, b in a.compare(b, options: .numeric) == .orderedAscending }
-        guard let newest = live.last, let h = FileHandle(forReadingAtPath: base + "/" + newest + "/Log.txt") else { return false }
+        // the Live that runs writes its Log.txt now: the newest log, not the highest version number (several Lives are
+        // installed; v2 read 12.4.16's log while 12.4.6 was running)
+        let logs = dirs.filter { $0.hasPrefix("Live ") }.map { base + "/" + $0 + "/Log.txt" }
+        func mtime(_ p: String) -> Date {
+            ((try? FileManager.default.attributesOfItem(atPath: p))?[.modificationDate] as? Date) ?? .distantPast
+        }
+        guard let newest = logs.max(by: { mtime($0) < mtime($1) }), let h = FileHandle(forReadingAtPath: newest) else { return false }
         defer { try? h.close() }
         let size = (try? h.seekToEnd()) ?? 0
         try? h.seek(toOffset: size > 400_000 ? size - 400_000 : 0)
