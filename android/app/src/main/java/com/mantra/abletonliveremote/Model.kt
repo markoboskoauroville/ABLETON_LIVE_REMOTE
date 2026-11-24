@@ -10,8 +10,12 @@ import kotlin.math.max
 /** One track of the set. kind bits: 1 can be armed, 2 audio track, 4 group, 8 inside a group. arm -1: cannot be armed. */
 data class Track(
     val i: Int, val name: String, val color: Int, val kind: Int, val arm: Int, val mute: Boolean, val solo: Boolean,
-    val clips: Int, val sum: Double
+    val clips: Int, val sum: Double,
+    /** Live's own identity of the track (v8): the same through renames and moves; "" from an older Mac. */
+    val uid: String = ""
 ) {
+    /** The name without Live's automatic leading track number ("3-01 Drums" → "01 Drums"): Live renumbers it. */
+    val bareName get() = name.replace(Regex("^\\d+-"), "")
     val armable get() = (kind and 1) != 0 && arm >= 0
     val group get() = (kind and 4) != 0
     val grouped get() = (kind and 8) != 0
@@ -113,3 +117,6 @@ data class WinInfo(
     val found: Boolean, val onScreen: Boolean, val front: Boolean, val covered: Double, val by: List<String>,
     val fx: Int, val fy: Int, val fw: Int, val fh: Int
 )
+
+/** One of Ableton Live Assistant's switches as the phone sees it (v8): a module, or one of A1's flags. */
+data class Feature(val id: String, val group: String, val name: String, val about: String, val on: Boolean, val state: String)

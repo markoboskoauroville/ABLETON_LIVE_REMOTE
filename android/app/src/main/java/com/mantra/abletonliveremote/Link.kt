@@ -63,7 +63,8 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
                 val b = base ?: find()
                 if (b == null) {
                     connected.value = false
-                    status.value = "Looking for the Mac… (same Wi-Fi, the cable, or Tailscale)"
+                    status.value = if (notRunning) "Ableton Live Assistant is not running on the Mac"
+                                   else "Looking for the Mac… (same Wi-Fi, the cable, or Tailscale)"
                     delay(1500)
                     continue
                 }
@@ -125,6 +126,19 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         send("c=jump&b=" + String.format(java.util.Locale.US, "%.4f", b))
     }
 
+    /** The Assistant's switches (v8): GET /features; null when the Mac does not answer. */
+    fun features(): List<Feature>? {
+        val b = base ?: return null
+        val d = get("$b/features", 3000) ?: return null
+        return try {
+            val a = JSONObject(String(d)).optJSONArray("features") ?: return emptyList()
+            (0 until a.length()).map { i ->
+                val f = a.getJSONObject(i)
+                Feature(f.optString("id"), f.optString("group"), f.optString("name"), f.optString("about"), f.optBoolean("on"), f.optString("state"))
+            }
+        } catch (e: Exception) { null }
+    }
+
     /** Track t's waveform, fetched once per change of its clips (key). */
     fun loadWave(t: Int, key: String) {
         val b = base ?: return
@@ -156,6 +170,10 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
     var waveTrack: String
         get() = prefs.getString("waveTrack", "") ?: ""
         set(v) { prefs.edit().putString("waveTrack", v).apply() }
+
+    var waveUid: String
+        get() = prefs.getString("waveUid", "") ?: ""
+        set(v) { prefs.edit().putString("waveUid", v).apply() }
 
     var waveIndex: Int
         get() = prefs.getInt("waveIndex", -1)
@@ -203,10 +221,13 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         while (bonjour == null && prefs.getString("last", null) == null && waited < 4000) { Thread.sleep(250); waited += 250 }
         bonjour?.let { tries += it to "Wi-Fi" }
         tries += "http://$TAILSCALE_MAC:$PORT" to "Tailscale"
+        notRunning = false
         for ((url, how) in tries.distinctBy { it.first }) {
             // v6: the Wi-Fi gets 2.5 s (a dozing phone's first packet is slow: v5 gave up on a typed LAN address in 0.9 s
             // and fell through to Tailscale); the cable answers at once or not at all
-            val d = get("$url/hello", if (how == "the cable") 900 else 2500) ?: continue
+            val (d, closed) = hello("$url/hello", if (how == "the cable") 900 else 2500)
+            if (closed) notRunning = true
+            if (d == null) continue
             val name = try {
                 val j = JSONObject(String(d))
                 if (j.optString("app") != "ableton-live-remote") continue
@@ -219,6 +240,25 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         }
         return null
     }
+
+    /**
+     * v8: the Mac answered but nothing serves the phone (the connection was refused, or the cable's tunnel closed at once):
+     * the Mac is there and Ableton Live Assistant, which serves the phone since 24.11.2026, is not running.
+     */
+    @Volatile var notRunning = false
+        private set
+
+    private fun hello(url: String, timeout: Int): Pair<ByteArray?, Boolean> = try {
+        val c = http.newBuilder().readTimeout(timeout.toLong(), TimeUnit.MILLISECONDS)
+            .connectTimeout(minOf(timeout, 1500).toLong(), TimeUnit.MILLISECONDS).build()
+        c.newCall(Request.Builder().url(url).build()).execute().use { r -> (if (r.isSuccessful) r.body?.bytes() else null) to false }
+    } catch (e: java.net.SocketTimeoutException) { null to false
+    } catch (e: java.net.ConnectException) {
+        null to ((e.message ?: "").contains("ECONNREFUSED") || (e.message ?: "").contains("refused", ignoreCase = true))
+    } catch (e: java.io.IOException) {
+        // through the cable a closed port shows as a tunnel that ends at once
+        null to (url.startsWith("http://127.0.0.1") && !(e.message ?: "").contains("timeout", ignoreCase = true))
+    } catch (e: Exception) { null to false }
 
     private fun startBonjour() {
         val nsd = ctx.getSystemService(NsdManager::class.java) ?: return
@@ -254,7 +294,8 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         val tracks = (0 until (ts?.length() ?: 0)).map { i ->
             val t = ts!!.getJSONObject(i)
             Track(t.optInt("i", i), t.optString("name", ""), t.optInt("color", 0x888888), t.optInt("kind", 0),
-                t.optInt("arm", -1), t.optBoolean("mute"), t.optBoolean("solo"), t.optInt("clips"), t.optDouble("sum", 0.0))
+                t.optInt("arm", -1), t.optBoolean("mute"), t.optBoolean("solo"), t.optInt("clips"), t.optDouble("sum", 0.0),
+                t.optString("id", ""))
         }
         LiveState(j.optLong("v"), j.optBoolean("live"), j.optBoolean("playing"), j.optDouble("time", 0.0),
             j.optDouble("tempo", 120.0), j.optBoolean("metro"), j.optBoolean("loop"), j.optDouble("loopStart", 0.0),

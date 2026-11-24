@@ -106,7 +106,7 @@ private val White = Color(0xFFF2F2F7)
  * The scenario tabs (Marko, 24.11.2026: "for each scenario ... separate tabs"). A new scenario is one more pair here and
  * one more branch in RemoteScreen: MIX (solo and mute for every track; the state already carries both) comes next.
  */
-private val TABS = listOf("rec" to "REC", "session" to "SESSION")
+private val TABS = listOf("rec" to "REC", "session" to "SESSION", "assist" to "ASSISTANT")
 
 /**
  * Ableton Live Remote (Mantra). Portrait, Stream Deck style keys. REC: the transport, the metronome with its beat
@@ -212,7 +212,7 @@ private fun RemoteScreen(
                 ) {
                     Box(Modifier.size(9.dp).clip(CircleShape).background(if (connected) Green else Amber))
                     Spacer(Modifier.width(10.dp))
-                    Text(if (connected) status else "Looking for the Mac… (same Wi-Fi, the cable, or Tailscale)",
+                    Text(status,
                         color = Grey, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Text("v${BuildConfig.VERSION_NAME}", color = Grey, fontSize = 13.sp,
@@ -223,6 +223,7 @@ private fun RemoteScreen(
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (tab) {
                     "session" -> SessionTab(viewer) { setFull(true) }
+                    "assist" -> AssistTab(link)
                     else -> RecTab(link)
                 }
             }
@@ -230,6 +231,54 @@ private fun RemoteScreen(
         }
     }
     if (ask) AddressDialog(link.manual.value, { link.setManual(it); ask = false }) { ask = false }
+}
+
+// MARK: ASSISTANT
+
+/**
+ * v8 (Marko, 24.11.2026: "helper app can disable, enable things in Ableton Live Assistant"): the Assistant's modules
+ * and A1's switches, a name, one line, and ON / OFF. Read every two seconds while this tab is shown.
+ */
+@Composable
+private fun AssistTab(link: Link) {
+    var list by remember { mutableStateOf<List<Feature>?>(null) }
+    var bump by remember { mutableIntStateOf(0) }
+    LaunchedEffect(bump) {
+        while (true) {
+            list = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { link.features() }
+            kotlinx.coroutines.delay(2000)
+        }
+    }
+    val l = list
+    if (l == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Waiting for Ableton Live Assistant…", color = Grey, fontSize = 15.sp) }
+        return
+    }
+    LazyColumn(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (g in l.map { it.group }.distinct()) {
+            item(key = "head-$g") {
+                Text(if (g == "A1") "ABLETON ASSISTANT A1" else "THE ASSISTANT'S MODULES", color = Grey, fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold, letterSpacing = 1.sp, modifier = Modifier.padding(top = 8.dp, bottom = 2.dp))
+            }
+            items(l.filter { it.group == g }, key = { it.id }) { f ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Body).padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(f.name, color = White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(f.about, color = Grey, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    SmallKey(if (f.on) "ON" else "OFF", f.on, Green, "feature ${f.id}") {
+                        link.send("c=feature&id=${f.id}&v=" + if (f.on) "0" else "1")
+                        list = l.map { if (it.id == f.id) it.copy(on = !f.on) else it }
+                        bump++
+                    }
+                }
+            }
+        }
+    }
 }
 
 // MARK: SESSION
@@ -492,13 +541,19 @@ private fun WaveSection(link: Link, s: LiveState, clock: State<Long>) {
     val audio = s.tracks.filter { it.hasAudio }
     var chosen by remember { mutableStateOf(link.waveTrack) }
     var chosenIndex by remember { mutableIntStateOf(link.waveIndex) }
+    var chosenUid by remember { mutableStateOf(link.waveUid) }
     var view by remember { mutableStateOf(link.view) }
     var menu by remember { mutableStateOf(false) }
-    // v5: by name, and when the name is gone (renamed in Live) by its place, so a rename does not switch the waveform
-    val track = audio.firstOrNull { it.name == chosen } ?: audio.firstOrNull { it.i == chosenIndex } ?: audio.firstOrNull()
-    LaunchedEffect(track?.i, track?.name) {
-        if (track != null && (track.name != chosen || track.i != chosenIndex)) {
-            chosen = track.name; chosenIndex = track.i; link.waveTrack = track.name; link.waveIndex = track.i
+    // v8: Live's own identity of the track first (renames, Live's renumbering "2-01 Drums" → "3-01 Drums", moves), then
+    // the name without Live's number, then the name, then the place (v5)
+    val bare = chosen.replace(Regex("^\\d+-"), "")
+    val track = (if (chosenUid.isNotEmpty()) audio.firstOrNull { it.uid == chosenUid } else null)
+        ?: audio.firstOrNull { it.name == chosen } ?: audio.firstOrNull { it.bareName == bare }
+        ?: audio.firstOrNull { it.i == chosenIndex } ?: audio.firstOrNull()
+    LaunchedEffect(track?.i, track?.name, track?.uid) {
+        if (track != null && (track.name != chosen || track.i != chosenIndex || track.uid != chosenUid)) {
+            chosen = track.name; chosenIndex = track.i; chosenUid = track.uid
+            link.waveTrack = track.name; link.waveIndex = track.i; link.waveUid = track.uid
         }
     }
     val wave by link.wave.collectAsState()
@@ -530,7 +585,7 @@ private fun WaveSection(link: Link, s: LiveState, clock: State<Long>) {
                                     fontWeight = if (t.i == track?.i) FontWeight.Bold else FontWeight.Normal)
                             }
                         },
-                        onClick = { chosen = t.name; chosenIndex = t.i; link.waveTrack = t.name; link.waveIndex = t.i; menu = false }
+                        onClick = { chosen = t.name; chosenIndex = t.i; chosenUid = t.uid; link.waveTrack = t.name; link.waveIndex = t.i; link.waveUid = t.uid; menu = false }
                     )
                 }
             }
