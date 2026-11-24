@@ -82,6 +82,15 @@ See the dated lines at the end (newest last).
   lights it for 3 s. Live renumbers names that start with a track number ("2-01 Drums" → "3-01 Drums") when a track
   goes in front of them, and back when it is removed.
 
+## PAUSE (Android v9, Assistant v36, AbletonOSC 24.11.2026)
+
+- The paused state lives in AbletonOSC (`manager._mantra_paused`): `/live/mantra/pause` (playing: stop exactly here, the
+  watcher leaves it alone, a take being recorded ends with the record button off; paused: go on), `/live/mantra/play`
+  (paused: Live's continue_playing from the paused place; else Live's Play from the insert point), `/live/mantra/stop`
+  (paused: the mode's stop now), `/live/mantra/paused`. A new insert point (a tap) ends a pause; any play ends it.
+- The phone: two rows of three keys (PLAY PAUSE STOP / REC METRO mode), 70 dp tall; REC's circle red always, the key
+  filled red while recording; PAUSE lit amber while paused. The Assistant has no transport area, so no PAUSE there.
+
 ## Switches
 
 - `~/.config/ableton-live-remote/no-cable` (Mac): the helper makes no adb reverse and removes its own; for Wi-Fi tests.
