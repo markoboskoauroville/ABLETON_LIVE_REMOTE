@@ -24,3 +24,8 @@
   AbletonOSC's scheduled tick (generation-guarded against `/live/api/reload` doubling it). 24.11.2026.
 - **Live renumbers track names that begin with their number** when a track is put in front of them. The waveform's track
   is remembered by name, then by index, so such a rename can move the waveform to another track. 24.11.2026.
+- **Live's own track identity is `_live_ptr`** (through a Mantra handler): the same through renames, Live's renumbering
+  and moves; the phone keeps its waveform track by it (v8). 24.11.2026.
+- **"The Mac is there but nothing serves the phone"** is a refused connection on Wi-Fi/Tailscale, or an adb-reverse tunnel
+  that closes at once on the cable; a timeout is "not reachable". The phone then says "Ableton Live Assistant is not
+  running on the Mac". 24.11.2026.
