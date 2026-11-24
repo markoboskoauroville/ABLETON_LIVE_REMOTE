@@ -56,6 +56,25 @@ See the dated lines at the end (newest last).
   Live window (ScreenCaptureKit in the helper) would see through covering windows; it needs Screen Recording
   permission for the helper and is not built.
 
+## The insert point and the playback mode (Android v7, Mac v6, AbletonOSC 24.11.2026)
+
+- Live's insert point is `Song.start_time`: Play and Space start there. Setting `current_song_time` does NOT move it
+  (the cause of "every time I click play, it plays from the beginning"). A tap on the waveform (`c=jump`) now sets both;
+  the phone draws the insert point as an amber flag top and bottom with a dotted line, the playhead stays a white line.
+- The playback mode is Live's own behaviour after ANY stop, kept in `~/.config/mantra-live-playback-mode`
+  (`return` | `continue`) and run inside AbletonOSC (a watcher on its 100 ms tick): RETURN (DAW) puts the playhead back
+  on the insert point; CONTINUE (DaVinci Resolve) moves the insert point to where it stopped. Works with the phone
+  closed and the helper quit (verified with Live's own Space key). `/live/mantra/playback_mode [mode]`,
+  `/live/mantra/start_time [beats]`; the helper's state carries `insert` and `mode`; the phone's fifth transport key is
+  the pictogram (curl back = RETURN, run on to a filled second flag = CONTINUE).
+- Ableton Live Assistant's own Space logic (Transport.swift, flag "follow": stop and plant the insert point on the
+  playhead) is the same idea for the Space key only; with A1 running and "follow" on, RETURN and A1 disagree for a
+  Space stop (A1 plants after the watcher put the playhead back, so the result is still RETURN: verified only by
+  reading the timing, A1 was not running on 24.11.2026). Step 3 (A1 as the helper) makes A1's switch and this file one.
+- NEW TRACK asks AUDIO / MIDI and AT THE BEGINNING (index 0) / AT THE END (-1); the list scrolls to the new track and
+  lights it for 3 s. Live renumbers names that start with a track number ("2-01 Drums" → "3-01 Drums") when a track
+  goes in front of them, and back when it is removed.
+
 ## Switches
 
 - `~/.config/ableton-live-remote/no-cable` (Mac): the helper makes no adb reverse and removes its own; for Wi-Fi tests.

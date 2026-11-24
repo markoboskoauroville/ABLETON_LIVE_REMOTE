@@ -19,3 +19,8 @@
   /hello and fell through to Tailscale; v6 gives Wi-Fi 2.5 s and Bonjour 4 s. 24.11.2026.
 - **The Mac's LAN address is 192.168.1.102 (en17, Ethernet) on 24.11.2026**, not 192.168.1.100; en0 has 10.250.79.41.
   Bonjour advertises all three; the phone found the right one. 24.11.2026.
+- **Live's insert point is `Song.start_time`, not `current_song_time`.** `start_playing` starts at start_time;
+  `continue_playing` at the song time. A listener callback may not change the song, so the playback-mode watcher runs on
+  AbletonOSC's scheduled tick (generation-guarded against `/live/api/reload` doubling it). 24.11.2026.
+- **Live renumbers track names that begin with their number** when a track is put in front of them. The waveform's track
+  is remembered by name, then by index, so such a rename can move the waveform to another track. 24.11.2026.
