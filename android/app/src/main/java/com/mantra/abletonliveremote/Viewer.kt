@@ -8,7 +8,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.io.File
 
 /**
  * The SESSION tab (Marko, 24.11.2026: "a session view where I can see exactly the screen as it is on my computer ...
@@ -42,14 +41,6 @@ class Viewer(ctx: Context, private val link: Link, private val scope: CoroutineS
     @Volatile private var retryAfter = 0L
 
     init {
-        // a test install may hand the password over in the app's private folder (only adb run-as on this debug build
-        // can write there); it is taken into the Keystore at once and the file deleted
-        val f = File(ctx.filesDir, "vnc_import")
-        if (f.exists()) {
-            val pw = runCatching { f.readText().trim() }.getOrDefault("")
-            f.delete()
-            if (pw.isNotEmpty()) Secrets.putPin(prefs, KEY, pw)
-        }
         needPassword.value = Secrets.pin(prefs, KEY).isEmpty()
     }
 

@@ -12,3 +12,10 @@
 - **AbletonOSC works once per tick (100 ms)**: one question costs 50–100 ms of the shared turn. 24.11.2026.
 - **A Kotlin `var full` in an Activity has a JVM setter `setFull(Boolean)`**: a `fun setFull(on: Boolean)` beside it is a
   "Platform declaration clash" (Android v3 failed on it; the fix went out as v4, the number is never reused). 24.11.2026.
+- **`pkill -f AbletonLiveRemote.app` matches nothing**: the bundle is "Ableton Live Remote (Mantra).app"; the process is
+  `AbletonLiveRemote` (`pkill -x AbletonLiveRemote`). A first "kill the helper" stress run killed nothing and was read as
+  "the phone shows a dead helper as connected"; the real kill was seen within 2 s. 24.11.2026.
+- **A typed LAN address must get more than 0.9 s**: the phone on 2.4 GHz Wi-Fi with Tailscale on missed the first
+  /hello and fell through to Tailscale; v6 gives Wi-Fi 2.5 s and Bonjour 4 s. 24.11.2026.
+- **The Mac's LAN address is 192.168.1.102 (en17, Ethernet) on 24.11.2026**, not 192.168.1.100; en0 has 10.250.79.41.
+  Bonjour advertises all three; the phone found the right one. 24.11.2026.

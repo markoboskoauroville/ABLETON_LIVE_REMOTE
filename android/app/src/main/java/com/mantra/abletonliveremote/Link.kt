@@ -199,11 +199,13 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         tries += "http://127.0.0.1:$PORT" to "the cable"
         prefs.getString("last", null)?.let { tries += it to "Wi-Fi" }
         var waited = 0
-        while (bonjour == null && prefs.getString("last", null) == null && waited < 2500) { Thread.sleep(250); waited += 250 }
+        while (bonjour == null && prefs.getString("last", null) == null && waited < 4000) { Thread.sleep(250); waited += 250 }
         bonjour?.let { tries += it to "Wi-Fi" }
         tries += "http://$TAILSCALE_MAC:$PORT" to "Tailscale"
         for ((url, how) in tries.distinctBy { it.first }) {
-            val d = get("$url/hello", 900) ?: continue
+            // v6: the Wi-Fi gets 2.5 s (a dozing phone's first packet is slow: v5 gave up on a typed LAN address in 0.9 s
+            // and fell through to Tailscale); the cable answers at once or not at all
+            val d = get("$url/hello", if (how == "the cable") 900 else 2500) ?: continue
             val name = try {
                 val j = JSONObject(String(d))
                 if (j.optString("app") != "ableton-live-remote") continue

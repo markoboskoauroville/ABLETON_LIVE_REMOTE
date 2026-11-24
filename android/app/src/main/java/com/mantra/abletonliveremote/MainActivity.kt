@@ -83,6 +83,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -329,7 +330,8 @@ private fun PasswordCard(refused: Boolean, save: (String) -> Unit) {
             (if (refused) "The Mac refused that password. " else "") +
                 "The Live window comes from the Mac's Screen Sharing. Its password (System Settings → Sharing → Screen " +
                 "Sharing → \"VNC viewers may control screen with password\") is asked once and kept on this phone only, encrypted.",
-            color = if (refused) Amber else Grey, fontSize = 14.sp, modifier = Modifier.semantics { contentDescription = "password note" }
+            color = if (refused) Amber else Grey, fontSize = 14.sp, textAlign = TextAlign.Center,
+            modifier = Modifier.semantics { contentDescription = "password note" }
         )
         Spacer(Modifier.height(14.dp))
         OutlinedTextField(text, { text = it }, singleLine = true, label = { Text("Screen Sharing password") },
