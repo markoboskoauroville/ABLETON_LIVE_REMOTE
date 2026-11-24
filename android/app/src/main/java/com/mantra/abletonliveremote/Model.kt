@@ -27,7 +27,11 @@ data class Track(
 data class LiveState(
     val v: Long, val live: Boolean, val playing: Boolean, val time: Double, val tempo: Double, val metro: Boolean,
     val loop: Boolean, val loopStart: Double, val loopLen: Double, val rec: Boolean, val sigN: Int, val sigD: Int,
-    val end: Double, val tracks: List<Track>, val at: Long, val noInput: Boolean = false
+    val end: Double, val tracks: List<Track>, val at: Long, val noInput: Boolean = false,
+    /** Live's insert point (Song.start_time): where Play and Space start. */
+    val insert: Double = 0.0,
+    /** After a stop: "return" (the DAW way, back to the insert point) or "continue" (the editing way, DaVinci Resolve). */
+    val mode: String = "return"
 ) {
     val beatLen get() = 4.0 / max(1, sigD)
     val barLen get() = beatLen * max(1, sigN)

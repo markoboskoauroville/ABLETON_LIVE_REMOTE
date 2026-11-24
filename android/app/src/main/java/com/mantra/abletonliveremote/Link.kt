@@ -103,7 +103,8 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         val now = SystemClock.elapsedRealtime()
         val prev = state.value
         // a jump from this phone is shown at once; a reading taken before Live made it is not allowed to undo it
-        val next = if (now < holdTimeUntil && prev != null) s.copy(time = prev.now(now), at = now) else Clock.smooth(prev, s)
+        val next = if (now < holdTimeUntil && prev != null) s.copy(time = prev.now(now), at = now, insert = prev.insert)
+                   else Clock.smooth(prev, s)
         state.value = next
     }
 
@@ -119,7 +120,7 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
     fun jump(beat: Double, final: Boolean = true) {
         val b = maxOf(0.0, beat)
         val now = SystemClock.elapsedRealtime()
-        state.value?.let { state.value = it.copy(time = b, at = now) }
+        state.value?.let { state.value = it.copy(time = b, at = now, insert = b) }
         holdTimeUntil = now + if (final) 450 else 700
         send("c=jump&b=" + String.format(java.util.Locale.US, "%.4f", b))
     }
@@ -258,7 +259,8 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         LiveState(j.optLong("v"), j.optBoolean("live"), j.optBoolean("playing"), j.optDouble("time", 0.0),
             j.optDouble("tempo", 120.0), j.optBoolean("metro"), j.optBoolean("loop"), j.optDouble("loopStart", 0.0),
             j.optDouble("loopLen", 0.0), j.optBoolean("rec"), j.optInt("sigN", 4), j.optInt("sigD", 4),
-            j.optDouble("end", 0.0), tracks, SystemClock.elapsedRealtime(), j.optBoolean("noInput"))
+            j.optDouble("end", 0.0), tracks, SystemClock.elapsedRealtime(), j.optBoolean("noInput"),
+            j.optDouble("insert", 0.0), j.optString("mode", "return"))
     } catch (e: Exception) { null }
 
     private fun get(url: String, timeout: Int): ByteArray? = try {

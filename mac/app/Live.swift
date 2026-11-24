@@ -35,6 +35,8 @@ struct Snapshot: Equatable {
     var sigD = 4
     var end = 0.0
     var tracks: [TrackInfo] = []
+    var insert = 0.0           // Live's insert point (Song.start_time): where Play and Space start
+    var mode = "return"        // the playback mode after a stop: "return" (DAW) or "continue" (DaVinci Resolve)
 }
 
 /// An audio clip on the Arrangement timeline, read by /live/mantra/remote/clips.
@@ -156,6 +158,11 @@ final class Live {
                                       arm: n(b + 3), mute: n(b + 4) != 0, solo: n(b + 5) != 0, clips: n(b + 6),
                                       sum: d(b + 7)))
         }
+        let tail = 12 + count * per                         // AbletonOSC of 24.11.2026 adds these two after the tracks
+        if r.count >= tail + 2 {
+            s.insert = d(tail)
+            if let m = r[tail + 1] as? String, m == "return" || m == "continue" { s.mode = m }
+        }
         return s
     }
 
@@ -218,10 +225,18 @@ final class Live {
             guard t >= 0 else { return false }
             tell("/live/track/set/solo", [t, v ?? !(s.tracks.first { $0.index == t }?.solo ?? false)])
         case "jump":
+            // v6 (Marko, 24.11.2026: "next play should start from that point where I did insertion point with finger"):
+            // the playhead AND Live's insert point (Song.start_time, where Play starts) go there; setting the song time
+            // alone left Play starting from the old insert point
             guard let b = Double(q["b"] ?? ""), b.isFinite else { return false }
             tell("/live/song/set/current_song_time", [max(0, b)])
+            tell("/live/mantra/start_time", [max(0, b)])
+        case "mode":
+            guard let m = q["v"], m == "return" || m == "continue" else { return false }
+            tell("/live/mantra/playback_mode", [m])
         case "new":
-            tell(q["k"] == "midi" ? "/live/song/create_midi_track" : "/live/song/create_audio_track", [-1])
+            // v6: at=start puts it before track 1 (index 0), anything else after the last track (-1)
+            tell(q["k"] == "midi" ? "/live/song/create_midi_track" : "/live/song/create_audio_track", [q["at"] == "start" ? 0 : -1])
         default:
             sent = false
         }
@@ -271,6 +286,6 @@ final class Live {
         func f(_ x: Double) -> Double { x.isFinite ? x : 0 }
         return ["v": rev, "live": answering, "playing": s.playing, "time": f(s.time), "tempo": f(s.tempo), "metro": s.metro,
                 "loop": s.loop, "loopStart": f(s.loopStart), "loopLen": f(s.loopLen), "rec": s.rec, "sigN": s.sigN,
-                "sigD": s.sigD, "end": f(s.end), "noInput": noInput, "tracks": s.tracks.map { $0.json }]
+                "sigD": s.sigD, "end": f(s.end), "noInput": noInput, "insert": f(s.insert), "mode": s.mode, "tracks": s.tracks.map { $0.json }]
     }
 }

@@ -351,6 +351,11 @@ private fun RecTab(link: Link) {
     val connected by link.connected.collectAsState()
     val s = st
     var newTrack by remember { mutableStateOf(false) }
+    // v7: the track just made: where it will appear (0 = before track 1, -1 = after the last), and the count before it
+    var expectAt by remember { mutableIntStateOf(-2) }
+    var countBefore by remember { mutableIntStateOf(0) }
+    var lit by remember { mutableIntStateOf(-1) }
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
     if (!connected || s == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("Waiting for the Mac…", color = Grey, fontSize = 15.sp)
@@ -372,11 +377,25 @@ private fun RecTab(link: Link) {
                 color = Amber, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.semantics { contentDescription = "no input device" })
         }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(s.tracks, key = { it.i }) { t -> TrackRow(link, t) }
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(s.tracks, key = { it.i }) { t -> TrackRow(link, t, t.i == lit) }
         }
     }
-    if (newTrack) NewTrackDialog({ kind -> link.send("c=new&k=$kind"); newTrack = false }) { newTrack = false }
+    // the new track arrived: scroll to it and light it for three seconds
+    LaunchedEffect(s.tracks.size) {
+        if (expectAt != -2 && s.tracks.size > countBefore) {
+            val i = if (expectAt == 0) 0 else s.tracks.size - 1
+            expectAt = -2
+            lit = i
+            list.animateScrollToItem(i)
+            kotlinx.coroutines.delay(3000)
+            lit = -1
+        }
+    }
+    if (newTrack) NewTrackDialog({ kind, start ->
+        expectAt = if (start) 0 else -1; countBefore = s.tracks.size
+        link.send("c=new&k=$kind&at=" + if (start) "start" else "end"); newTrack = false
+    }) { newTrack = false }
 }
 
 /** PLAY, STOP, RECORD, METRONOME: four square keys, the Stream Deck look. */
@@ -384,7 +403,7 @@ private fun RecTab(link: Link) {
 private fun Transport(link: Link, s: LiveState, clock: State<Long>) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val gap = 10.dp
-        val k: Dp = minOf((maxWidth - gap * 3) / 4, 96.dp)
+        val k: Dp = minOf((maxWidth - gap * 4) / 5, 96.dp)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             DeckKey(k, s.playing, Green, "play", { link.send("c=play") }) {
                 KeyFace("▶", "PLAY", if (s.playing) Green else White, k)
@@ -398,6 +417,11 @@ private fun Transport(link: Link, s: LiveState, clock: State<Long>) {
             DeckKey(k, s.metro, Amber, "metronome", { link.send("c=metro&v=" + if (s.metro) "0" else "1") }) {
                 MetronomeFace(s, clock, k)
             }
+            // v7: what Live does after a stop, a pictogram, no word (Marko, 24.11.2026: "a toggle icon which shows both
+            // ways of playback after stop ... in the same style" as Live's Follow button). It sets Live itself.
+            DeckKey(k, false, White, "playback mode ${s.mode}", {
+                link.send("c=mode&v=" + if (s.mode == "continue") "return" else "continue")
+            }) { ModeIcon(s.mode == "continue", Modifier.size(k * 0.62f)) }
         }
     }
 }
@@ -591,6 +615,20 @@ private fun WaveStrip(link: Link, s: LiveState, w: Wave?, track: Track?, view: S
                 px += step
             }
         }
+        // the insert point (v7): Live's own, where Play starts; a flag on top and a dotted amber line, never a hairline
+        if (s.insert >= a && s.insert <= b) {
+            val ix = x(s.insert)
+            var yy = 0f
+            while (yy < h) { drawLine(Amber, Offset(ix, yy), Offset(ix, minOf(h, yy + 6f)), 2.5f); yy += 11f }
+            val flag = androidx.compose.ui.graphics.Path().apply {
+                moveTo(ix - 14f, 0f); lineTo(ix + 14f, 0f); lineTo(ix, 20f); close()
+            }
+            drawPath(flag, Amber)
+            val flag2 = androidx.compose.ui.graphics.Path().apply {
+                moveTo(ix - 14f, h); lineTo(ix + 14f, h); lineTo(ix, h - 20f); close()
+            }
+            drawPath(flag2, Amber)
+        }
         // the playhead
         val t = s.now(clock.value)
         if (t >= a && t <= b) {
@@ -604,9 +642,11 @@ private fun WaveStrip(link: Link, s: LiveState, w: Wave?, track: Track?, view: S
 }
 
 @Composable
-private fun TrackRow(link: Link, t: Track) {
+private fun TrackRow(link: Link, t: Track, lit: Boolean = false) {
     Row(
         Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(12.dp)).background(Body)
+            .border(if (lit) 2.dp else 0.dp, if (lit) Green else Color.Transparent, RoundedCornerShape(12.dp))
+            .semantics { contentDescription = if (lit) "new track ${t.i}" else "track ${t.i}" }
             .padding(end = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -688,20 +728,40 @@ private fun Tabs(current: String, pick: (String) -> Unit) {
     }
 }
 
+/** NEW TRACK (v7, Marko 24.11.2026: "Add at the beginning, so before track one, or add at the end"): two questions,
+ *  each with two big keys, then MAKE IT. */
 @Composable
-private fun NewTrackDialog(make: (String) -> Unit, close: () -> Unit) {
+private fun NewTrackDialog(make: (String, Boolean) -> Unit, close: () -> Unit) {
+    var kind by remember { mutableStateOf("audio") }
+    var start by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = close,
         title = { Text("New track") },
-        text = { Text("A new track at the end of the set; it appears in the list and can be armed.", fontSize = 14.sp) },
-        confirmButton = {
-            Row {
-                TextButton({ make("audio") }, Modifier.semantics { contentDescription = "new audio" }) { Text("AUDIO") }
-                TextButton({ make("midi") }, Modifier.semantics { contentDescription = "new midi" }) { Text("MIDI") }
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ChoiceKey("AUDIO", kind == "audio", Modifier.weight(1f), "new audio") { kind = "audio" }
+                    ChoiceKey("MIDI", kind == "midi", Modifier.weight(1f), "new midi") { kind = "midi" }
+                }
+                ChoiceKey("AT THE BEGINNING · before track 1", start, Modifier.fillMaxWidth(), "at the beginning") { start = true }
+                ChoiceKey("AT THE END · after the last track", !start, Modifier.fillMaxWidth(), "at the end") { start = false }
             }
         },
+        confirmButton = { TextButton({ make(kind, start) }, Modifier.semantics { contentDescription = "make track" }) { Text("MAKE IT") } },
         dismissButton = { TextButton(close) { Text("✕") } }
     )
+}
+
+@Composable
+private fun ChoiceKey(label: String, on: Boolean, modifier: Modifier, name: String, pick: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        modifier.height(56.dp).clip(shape).background(if (on) Green.copy(alpha = 0.18f) else Color(0x11000000))
+            .border(if (on) 2.dp else 1.dp, if (on) Green else Grey, shape).clickable { pick() }
+            .padding(horizontal = 10.dp).semantics { contentDescription = name },
+        contentAlignment = Alignment.Center
+    ) { Text(label, fontSize = 14.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.Medium, maxLines = 1,
+        overflow = TextOverflow.Ellipsis) }
 }
 
 @Composable
@@ -721,4 +781,48 @@ private fun AddressDialog(now: String, save: (String) -> Unit, close: () -> Unit
         confirmButton = { TextButton({ save(text) }) { Text("SAVE") } },
         dismissButton = { TextButton(close) { Text("✕") } }
     )
+}
+
+/**
+ * The playback mode as a pictogram, line style like Live's Follow button. Both show an insert point (a flag on a
+ * line) and the play running to the right:
+ *   RETURN (the DAW way)       the arrow turns and comes back to the same insert point
+ *   CONTINUE (DaVinci Resolve) the arrow runs on to a second insert point, which is filled: the new place
+ */
+@Composable
+private fun ModeIcon(cont: Boolean, modifier: Modifier) {
+    Canvas(modifier.semantics { contentDescription = if (cont) "mode continue" else "mode return" }) {
+        val w = size.width; val h = size.height
+        val sw = w * 0.07f
+        val line = White
+        fun marker(x: Float, filled: Boolean) {
+            drawLine(if (filled) Amber else line, Offset(x, h * 0.12f), Offset(x, h * 0.92f), sw)
+            val p = androidx.compose.ui.graphics.Path().apply {
+                moveTo(x - w * 0.1f, h * 0.08f); lineTo(x + w * 0.1f, h * 0.08f); lineTo(x, h * 0.26f); close()
+            }
+            if (filled) drawPath(p, Amber) else drawPath(p, line, style = androidx.compose.ui.graphics.drawscope.Stroke(sw * 0.8f))
+        }
+        fun head(x: Float, y: Float, right: Boolean) {
+            val d = if (right) -1f else 1f
+            drawLine(line, Offset(x, y), Offset(x + d * w * 0.13f, y - h * 0.11f), sw, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(line, Offset(x, y), Offset(x + d * w * 0.13f, y + h * 0.11f), sw, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+        }
+        if (!cont) {
+            marker(w * 0.18f, true)
+            // out along the top, round the turn, back along the bottom into the same insert point
+            val path = androidx.compose.ui.graphics.Path().apply {
+                moveTo(w * 0.26f, h * 0.42f); lineTo(w * 0.72f, h * 0.42f)
+                quadraticTo(w * 0.95f, h * 0.42f, w * 0.95f, h * 0.58f)
+                quadraticTo(w * 0.95f, h * 0.74f, w * 0.72f, h * 0.74f)
+                lineTo(w * 0.28f, h * 0.74f)
+            }
+            drawPath(path, line, style = androidx.compose.ui.graphics.drawscope.Stroke(sw, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+            head(w * 0.28f, h * 0.74f, false)
+        } else {
+            marker(w * 0.12f, false)
+            drawLine(line, Offset(w * 0.2f, h * 0.58f), Offset(w * 0.74f, h * 0.58f), sw, cap = androidx.compose.ui.graphics.StrokeCap.Round)
+            head(w * 0.74f, h * 0.58f, true)
+            marker(w * 0.86f, true)
+        }
+    }
 }
