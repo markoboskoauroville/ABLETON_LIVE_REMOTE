@@ -39,10 +39,31 @@ button) · `c=metro&v=1|0` · `c=loop&v=1|0` · `c=arm&t=N&v=1|0` · `c=mute&t=N
 
 See the dated lines at the end (newest last).
 
+## SESSION (Android v3+, Mac v4+)
+
+- `Viewer.kt` + `Rfb.kt` (copied from MANTRA_REMOTE_VIEWING; changed: only the crop is a Bitmap, each frame logged as
+  `ALRvnc frame <wall ms> <rect> <bytes>` for delay tests). View only: nothing but frame requests is sent.
+- Route: the helper's own route. Over the cable the helper sets `adb reverse tcp:15900 tcp:5900` (the phone's own 5900 may
+  be a VNC server app); on Wi-Fi / Tailscale the Mac's 5900 directly.
+- Auth: the Mac's Screen Sharing VNC password (security type 2; the Mac offers 30, 33, 36, 2, 35), asked once on the
+  phone, kept encrypted by the Android Keystore (`Secrets.kt`), never in the repo or a log. PASSWORD key changes it.
+- Crop: `/window` gives the Live window in VNC pixels (each screen at its top-left in points, drawn at its pixel size).
+  The phone asks every second and follows a move/resize. Pinch zoom 1–8x, drag to pan, double tap fits, FULL SCREEN
+  hides the bars (✕ or Back leaves). The tab may turn sideways; REC stays portrait.
+- Honest limits: Apple's server sends the SCREEN, not the window. When other windows lie over Live (`covered`, `by`),
+  or Live is on another Space / minimised / hidden (`onScreen` false), the phone shows a note instead of a wrong
+  picture (SHOW ANYWAY for the covered case). Nothing on the Mac is moved or raised from the phone. A capture of only the
+  Live window (ScreenCaptureKit in the helper) would see through covering windows; it needs Screen Recording
+  permission for the helper and is not built.
+
+## Switches
+
+- `~/.config/ableton-live-remote/no-cable` (Mac): the helper makes no adb reverse and removes its own; for Wi-Fi tests.
+
 ## Next
 
-- v2: SESSION tab: the Ableton window over VNC (RFB client from MANTRA_REMOTE_VIEWING), cropped to `/window`.
-- MIX tab: solo and mute for every track (the state already carries them; the orders exist).
+- MIX tab: solo and mute for every track (the state already carries them; the orders `c=mute`, `c=solo` exist). The
+  tab bar takes it as a third pair in `TABS` and a branch in `RemoteScreen`.
 
 - **24.11.2026:** Android v2 (Latest) and Mac helper v3, all runs green. Verified on the Pixel 7 emulator over the cable
   route (adb reverse) against Live 12.4.6: metronome, PLAY, STOP, RECORD (record_mode on + playing, STOP ends both),
@@ -51,3 +72,13 @@ See the dated lines at the end (newest last).
   changes made in Live (metronome, loop) shown on the phone. Audio tracks do not arm: Live 12.4.6's log says its audio
   input device is "No Device" (the RØDE NT1 used under 12.4.16 is not connected); the phone says so (v2 / Mac v3).
   NOT yet on the real Pixel 7: it was rebooted and not unlocked since, so no app can start there (needs Marko's PIN once).
+
+- **24.11.2026 (later), Android v6 (Latest) and Mac helper v5:** SESSION tab built (password asked on the phone; the
+  first Screen Sharing sign-in is Marko's, so no picture was seen yet and frame rate / delay are not measured). On the
+  real Pixel 7 (unlocked by Marko) in the copy "STRESS TEST 24.11.2026.als" (beside the untouched
+  "Korak_u_Nepoznato.als" in ~/Music/Ableton/Korak_u_Nepoznato Project): every REC control both ways, a real take
+  through the RØDE NT1 started and stopped from the phone (clip on the timeline, file in Samples/Recorded, its waveform
+  on the phone without a restart), stress cases (rapid taps, transport hammering, arm storms, 25 tracks created and
+  deleted, the shown track deleted and renamed, tempo/signature/loop changes while playing, 11 min play with no drift,
+  helper killed and restarted, background/foreground, Wi-Fi by Bonjour and by a typed address). Fixed: v5 rename keeps
+  the waveform, heartbeat; v6 Wi-Fi timeouts. Live left with the copy open, stopped, metronome off, saved.
