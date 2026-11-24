@@ -1,5 +1,12 @@
 # Ableton Live Remote (Mantra): takeover
 
+**24.11.2026: the Mac side lives in Ableton Live Assistant.** The separate helper "Ableton Live Remote (Mantra).app"
+(this repo's `mac/`, releases mac-v1…mac-v6) is retired: quit, removed from /Applications, its source, workflow and
+releases removed here. Its code is the PHONE REMOTE module of Ableton Live Assistant (repo ABLETON_LIVE_ACTIONS,
+`app/Remote*.swift`, `app/PlaybackMode.swift`, from v34). The phone works only while Ableton Live Assistant runs (the
+star's row opens it); otherwise the phone says "Ableton Live Assistant is not running on the Mac". The sections below
+that name `mac/app/...` describe what is now in ABLETON_LIVE_ACTIONS under the Remote* names.
+
 **What it is.** An Android remote for Ableton Live (Stream Deck look, scenario tabs) and its Mac helper. The phone shows
 and controls the set that is open in Live; the helper on the Mac is the only thing that talks to Live.
 

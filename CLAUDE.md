@@ -8,3 +8,4 @@
 - The phone never talks to AbletonOSC: only the helper does, through the shared turn on 11011 (mac/app/LiveTurn.swift,
   copied from ABLETON_LIVE_ACTIONS). Never quit, save or close Marko's set; no destructive OSC.
 - Marko's requests word for word: momentaryupdates.md. State: TAKEOVER.md. Mistakes: LESSONS.md.
+- Since 24.11.2026 the Mac side is Ableton Live Assistant's PHONE REMOTE module (ABLETON_LIVE_ACTIONS); `mac/` is gone.
