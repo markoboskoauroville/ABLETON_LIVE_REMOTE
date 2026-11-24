@@ -450,36 +450,64 @@ private fun RecTab(link: Link) {
 /** PLAY, STOP, RECORD, METRONOME: four square keys, the Stream Deck look. */
 @Composable
 private fun Transport(link: Link, s: LiveState, clock: State<Long>) {
+    // v9: six keys in two rows of three (Marko, 24.11.2026: "There must be a pause third button"): PLAY PAUSE STOP,
+    // then REC METRO and the playback mode. Each key wider and as tall as the five-across keys of v8 (68 dp), so no
+    // label is cut and the waveform loses only one row's height.
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val gap = 10.dp
-        val k: Dp = minOf((maxWidth - gap * 4) / 5, 96.dp)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            DeckKey(k, s.playing, Green, "play", { link.send("c=play") }) {
-                KeyFace("▶", "PLAY", if (s.playing) Green else White, k)
+        val w: Dp = (maxWidth - gap * 2) / 3
+        val h: Dp = 70.dp
+        Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                DeckKey(w, h, s.playing, Green, "play", { link.send("c=play") }) {
+                    KeyFace("▶", "PLAY", if (s.playing) Green else White, h)
+                }
+                // PAUSE: stops exactly here in both modes; the next PLAY (or PAUSE again) goes on from here
+                DeckKey(w, h, s.paused, Amber, "pause", { link.send("c=pause") }) {
+                    PauseFace(if (s.paused) Amber else White, h)
+                }
+                DeckKey(w, h, false, White, "stop", { link.send("c=stop") }) {
+                    KeyFace("■", "STOP", White, h)
+                }
             }
-            DeckKey(k, false, White, "stop", { link.send("c=stop") }) {
-                KeyFace("■", "STOP", White, k)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                // REC: the circle is red always, as on every recorder; recording lights the whole key red
+                DeckKey(w, h, s.rec, Red, "record", { link.send("c=rec&v=" + if (s.rec) "0" else "1") },
+                    fill = if (s.rec) Red.copy(alpha = 0.28f) else KeyBg) {
+                    KeyFace("●", "REC", Red, h, labelColor = if (s.rec) White else Red)
+                }
+                DeckKey(w, h, s.metro, Amber, "metronome", { link.send("c=metro&v=" + if (s.metro) "0" else "1") }) {
+                    MetronomeFace(s, clock, h)
+                }
+                // v7: what Live does after a stop, a pictogram, no word ("a toggle icon which shows both ways of
+                // playback after stop ... in the same style" as Live's Follow button). It sets Live itself.
+                DeckKey(w, h, false, White, "playback mode ${s.mode}", {
+                    link.send("c=mode&v=" + if (s.mode == "continue") "return" else "continue")
+                }) { ModeIcon(s.mode == "continue", Modifier.size(h * 0.62f)) }
             }
-            DeckKey(k, s.rec, Red, "record", { link.send("c=rec&v=" + if (s.rec) "0" else "1") }) {
-                KeyFace("●", "REC", if (s.rec) Red else White, k)
-            }
-            DeckKey(k, s.metro, Amber, "metronome", { link.send("c=metro&v=" + if (s.metro) "0" else "1") }) {
-                MetronomeFace(s, clock, k)
-            }
-            // v7: what Live does after a stop, a pictogram, no word (Marko, 24.11.2026: "a toggle icon which shows both
-            // ways of playback after stop ... in the same style" as Live's Follow button). It sets Live itself.
-            DeckKey(k, false, White, "playback mode ${s.mode}", {
-                link.send("c=mode&v=" + if (s.mode == "continue") "return" else "continue")
-            }) { ModeIcon(s.mode == "continue", Modifier.size(k * 0.62f)) }
         }
     }
 }
 
+/** The standard pause symbol, two upright bars, and its word. */
 @Composable
-private fun KeyFace(icon: String, label: String, color: Color, k: Dp) {
+private fun PauseFace(color: Color, k: Dp) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Canvas(Modifier.size(k * 0.30f)) {
+            val bw = size.width * 0.28f
+            drawRoundRect(color, Offset(size.width * 0.12f, 0f), Size(bw, size.height), androidx.compose.ui.geometry.CornerRadius(bw * 0.2f))
+            drawRoundRect(color, Offset(size.width * 0.60f, 0f), Size(bw, size.height), androidx.compose.ui.geometry.CornerRadius(bw * 0.2f))
+        }
+        Spacer(Modifier.height(4.dp))
+        Text("PAUSE", color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+    }
+}
+
+@Composable
+private fun KeyFace(icon: String, label: String, color: Color, k: Dp, labelColor: Color = color) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(icon, color = color, fontSize = (k.value * 0.30f).sp)
-        Text(label, color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        Text(label, color = labelColor, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
     }
 }
 
@@ -736,11 +764,14 @@ private fun TrackRow(link: Link, t: Track, lit: Boolean = false) {
 // MARK: pieces
 
 @Composable
-private fun DeckKey(size: Dp, active: Boolean, accent: Color, name: String, onClick: () -> Unit, content: @Composable () -> Unit) {
+private fun DeckKey(
+    w: Dp, h: Dp, active: Boolean, accent: Color, name: String, onClick: () -> Unit, fill: Color = KeyBg,
+    content: @Composable () -> Unit
+) {
     val haptic = LocalHapticFeedback.current
-    val shape = RoundedCornerShape(size * 0.16f)
+    val shape = RoundedCornerShape(minOf(w, h) * 0.16f)
     Box(
-        Modifier.size(size).clip(shape).background(KeyBg)
+        Modifier.size(width = w, height = h).clip(shape).background(fill)
             .border(if (active) 3.dp else 1.dp, if (active) accent else KeyRim, shape)
             .clickable { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onClick() }
             .semantics { contentDescription = name },

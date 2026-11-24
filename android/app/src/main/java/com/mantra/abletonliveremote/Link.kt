@@ -121,7 +121,7 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
     fun jump(beat: Double, final: Boolean = true) {
         val b = maxOf(0.0, beat)
         val now = SystemClock.elapsedRealtime()
-        state.value?.let { state.value = it.copy(time = b, at = now, insert = b) }
+        state.value?.let { state.value = it.copy(time = b, at = now, insert = b, paused = false) }
         holdTimeUntil = now + if (final) 450 else 700
         send("c=jump&b=" + String.format(java.util.Locale.US, "%.4f", b))
     }
@@ -301,7 +301,7 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
             j.optDouble("tempo", 120.0), j.optBoolean("metro"), j.optBoolean("loop"), j.optDouble("loopStart", 0.0),
             j.optDouble("loopLen", 0.0), j.optBoolean("rec"), j.optInt("sigN", 4), j.optInt("sigD", 4),
             j.optDouble("end", 0.0), tracks, SystemClock.elapsedRealtime(), j.optBoolean("noInput"),
-            j.optDouble("insert", 0.0), j.optString("mode", "return"))
+            j.optDouble("insert", 0.0), j.optString("mode", "return"), j.optBoolean("paused"))
     } catch (e: Exception) { null }
 
     private fun get(url: String, timeout: Int): ByteArray? = try {

@@ -35,7 +35,9 @@ data class LiveState(
     /** Live's insert point (Song.start_time): where Play and Space start. */
     val insert: Double = 0.0,
     /** After a stop: "return" (the DAW way, back to the insert point) or "continue" (the editing way, DaVinci Resolve). */
-    val mode: String = "return"
+    val mode: String = "return",
+    /** PAUSE (v9): stopped by a PAUSE; the next PLAY continues from here. Kept on the Mac, so every phone agrees. */
+    val paused: Boolean = false
 ) {
     val beatLen get() = 4.0 / max(1, sigD)
     val barLen get() = beatLen * max(1, sigN)
