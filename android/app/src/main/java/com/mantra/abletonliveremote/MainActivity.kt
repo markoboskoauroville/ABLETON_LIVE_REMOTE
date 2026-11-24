@@ -6,6 +6,7 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
@@ -251,6 +252,8 @@ private fun SessionTab(viewer: Viewer, goFull: () -> Unit) {
                 color = Grey, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f)
                     .semantics { contentDescription = "session status" }
             )
+            SmallKey("PASSWORD", false, Grey, "change password") { viewer.needPassword.value = true }
+            Spacer(Modifier.width(8.dp))
             SmallKey("FULL SCREEN", false, Green, "full screen") { goFull() }
         }
         val note = when {
@@ -462,9 +465,16 @@ private fun Readout(s: LiveState, clock: State<Long>) {
 private fun WaveSection(link: Link, s: LiveState, clock: State<Long>) {
     val audio = s.tracks.filter { it.hasAudio }
     var chosen by remember { mutableStateOf(link.waveTrack) }
+    var chosenIndex by remember { mutableIntStateOf(link.waveIndex) }
     var view by remember { mutableStateOf(link.view) }
     var menu by remember { mutableStateOf(false) }
-    val track = audio.firstOrNull { it.name == chosen } ?: audio.firstOrNull()
+    // v5: by name, and when the name is gone (renamed in Live) by its place, so a rename does not switch the waveform
+    val track = audio.firstOrNull { it.name == chosen } ?: audio.firstOrNull { it.i == chosenIndex } ?: audio.firstOrNull()
+    LaunchedEffect(track?.i, track?.name) {
+        if (track != null && (track.name != chosen || track.i != chosenIndex)) {
+            chosen = track.name; chosenIndex = track.i; link.waveTrack = track.name; link.waveIndex = track.i
+        }
+    }
     val wave by link.wave.collectAsState()
     val key = track?.let { "${it.i}|${it.name}|${it.clips}|${it.sum}|${s.tempo}" }
     LaunchedEffect(key) { if (track != null && key != null) link.loadWave(track.i, key) }
@@ -494,7 +504,7 @@ private fun WaveSection(link: Link, s: LiveState, clock: State<Long>) {
                                     fontWeight = if (t.i == track?.i) FontWeight.Bold else FontWeight.Normal)
                             }
                         },
-                        onClick = { chosen = t.name; link.waveTrack = t.name; menu = false }
+                        onClick = { chosen = t.name; chosenIndex = t.i; link.waveTrack = t.name; link.waveIndex = t.i; menu = false }
                     )
                 }
             }

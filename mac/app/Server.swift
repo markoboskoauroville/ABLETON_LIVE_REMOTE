@@ -56,6 +56,16 @@ final class Server {
         }
         l.start(queue: .main)
         listener = l
+        if !beating { beating = true; startHeartbeat() }
+    }
+    private var beating = false
+
+    /// A heartbeat every second to every phone (v5): the phone takes three seconds of silence as a lost line.
+    func startHeartbeat() {
+        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            for p in self.peers.values where p.ws { self.sendText(p, Data("{\"hb\":1}".utf8)) }
+        }
     }
 
     /// The set changed: every phone gets it now.
@@ -325,9 +335,20 @@ final class Cable {
     private(set) var phones: [String] = []
     var onChange: () -> Void = {}
 
+    /// ~/.config/ableton-live-remote/no-cable: no adb reverse (the phone then finds the Mac on the Wi-Fi or Tailscale),
+    /// and the reverses already made are taken away. For a Wi-Fi test with the cable in, and for "no ADB" (v5).
+    static var off: Bool { FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.config/ableton-live-remote/no-cable") }
+    private var wasOff = false
+
     func start() {
         Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.tick() }
         tick()
+    }
+
+    private func serials() -> [String] {
+        run(["devices"]).split(separator: "\n").dropFirst().compactMap { l -> String? in
+            let f = l.split(separator: "\t"); return f.count == 2 && f[1] == "device" ? String(f[0]) : nil
+        }
     }
 
     private func run(_ args: [String]) -> String {
@@ -341,10 +362,19 @@ final class Cable {
 
     private func tick() {
         guard FileManager.default.isExecutableFile(atPath: adb) else { return }
+        let off = Cable.off
+        if off && wasOff { return }
+        wasOff = off
         DispatchQueue.global().async {
-            let serials = self.run(["devices"]).split(separator: "\n").dropFirst().compactMap { l -> String? in
-                let f = l.split(separator: "\t"); return f.count == 2 && f[1] == "device" ? String(f[0]) : nil
+            if off {
+                for s in self.serials() {
+                    _ = self.run(["-s", s, "reverse", "--remove", "tcp:\(PORT)"])
+                    _ = self.run(["-s", s, "reverse", "--remove", "tcp:15900"])
+                }
+                DispatchQueue.main.async { self.phones = []; self.onChange() }
+                return
             }
+            let serials = self.serials()
             var names: [String] = []
             for s in serials {
                 let list = self.run(["-s", s, "reverse", "--list"])

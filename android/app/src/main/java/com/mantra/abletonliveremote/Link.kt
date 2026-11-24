@@ -76,8 +76,14 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
                     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { closed.complete(Unit) }
                     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { closed.complete(Unit) }
                 })
+                lastMessage = SystemClock.elapsedRealtime()
                 while (!closed.isCompleted) {
                     if (!visible.value) { ws?.close(1000, "not seen"); break }
+                    // v5: the helper speaks every second; three seconds of silence is a lost line (v4 showed a dead
+                    // helper as connected for up to eight seconds, until OkHttp's ping gave up)
+                    if (SystemClock.elapsedRealtime() - lastMessage > 3000) {
+                        status.value = "The Mac stopped answering…"; break
+                    }
                     delay(250)
                 }
                 ws?.cancel()
@@ -88,7 +94,11 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
         }
     }
 
+    @Volatile private var lastMessage = 0L
+
     private fun receive(text: String) {
+        lastMessage = SystemClock.elapsedRealtime()
+        if (text.startsWith("{\"hb\"")) return                  // the helper's heartbeat (v5): the line is alive
         val s = parse(text) ?: return
         val now = SystemClock.elapsedRealtime()
         val prev = state.value
@@ -145,6 +155,10 @@ class Link(private val ctx: Context, private val scope: CoroutineScope) {
     var waveTrack: String
         get() = prefs.getString("waveTrack", "") ?: ""
         set(v) { prefs.edit().putString("waveTrack", v).apply() }
+
+    var waveIndex: Int
+        get() = prefs.getInt("waveIndex", -1)
+        set(v) { prefs.edit().putInt("waveIndex", v).apply() }
 
     var tab: String
         get() = prefs.getString("tab", "rec") ?: "rec"
